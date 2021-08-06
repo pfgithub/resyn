@@ -1,0 +1,17 @@
+// 'block' (:enter)? ('defer' :exit)? ';' :next
+// 'call' :function :arg
+// 'array' '[' ( :item )[','] ','? ']'
+// 'void'
+// 'defsymbol' '#':symbol ';' :expr
+
+defsymbol #demo;
+block call @print "wow!" defer call @print "leaving.";
+block call @mapset array [call @env void #demo "hello, world!"];
+block call @print call @mapget array[call @env void #demo];
+void
+
+//{(@print (@mapget [(@env void), #demo]))}
+//
+//block void void void
+//
+//array [void void void void]
