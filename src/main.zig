@@ -13,7 +13,7 @@ const Platform = struct {};
 /// no typechecks are done since typechecks are done during
 /// analysis
 fn execute(env: Val.Literal, code: *TyVal, platform: ?*Platform) Val.Literal {
-    switch(code.val.*) {
+    switch (code.val.*) {
         .literal => |literal| return literal,
         .block => |block| {
             _ = execute(env, block.enter, platform);
@@ -28,10 +28,10 @@ fn execute(env: Val.Literal, code: *TyVal, platform: ?*Platform) Val.Literal {
         .label => @panic("TODO label"),
         .array => |array| {
             var res_arr = std.ArrayList(*Val.Literal).init(global_allocator.?);
-            for(array.items) |item| {
+            for (array.items) |item| {
                 res_arr.append(allocDupe(execute(env, item, platform))) catch @panic("oom");
             }
-            return .{.array = res_arr.toOwnedSlice()};
+            return .{ .array = res_arr.toOwnedSlice() };
         },
         .env => return env,
 
@@ -39,40 +39,40 @@ fn execute(env: Val.Literal, code: *TyVal, platform: ?*Platform) Val.Literal {
             // method, arg
             const method = execute(env, call.method, platform);
             const arg = execute(env, call.arg, platform);
-            if(method != .builtin_fn) @panic("TODO");
-            if(std.mem.eql(u8, method.builtin_fn, "print")) {
+            if (method != .builtin_fn) @panic("TODO");
+            if (std.mem.eql(u8, method.builtin_fn, "print")) {
                 const out = std.io.getStdOut().writer();
                 out.writeAll("Program printed: ") catch @panic("bad");
-                printVal(out, .{.literal = arg});
+                printVal(out, .{ .literal = arg });
                 out.writeAll("\n") catch @panic("bad");
                 return .void;
-            }else if(std.mem.eql(u8, method.builtin_fn, "mapset")) {
-                if(arg != .array) unreachable;
-                if(arg.array.len != 3) unreachable;
-                if(arg.array[0].* != .map) unreachable;
-                if(arg.array[1].* != .symbol) unreachable;
-                for(arg.array[0].map) |item| {
-                    if(item.key == arg.array[1].symbol) unreachable;
+            } else if (std.mem.eql(u8, method.builtin_fn, "mapset")) {
+                if (arg != .array) unreachable;
+                if (arg.array.len != 3) unreachable;
+                if (arg.array[0].* != .map) unreachable;
+                if (arg.array[1].* != .symbol) unreachable;
+                for (arg.array[0].map) |item| {
+                    if (item.key == arg.array[1].symbol) unreachable;
                 }
 
                 var map_dupe = std.ArrayList(Val.Literal.MapEntry).init(global_allocator.?);
                 map_dupe.appendSlice(arg.array[0].map) catch @panic("oom");
-                map_dupe.append(.{.key = arg.array[1].symbol, .value = arg.array[2]}) catch @panic("oom");
+                map_dupe.append(.{ .key = arg.array[1].symbol, .value = arg.array[2] }) catch @panic("oom");
 
-                return .{.map = map_dupe.toOwnedSlice()};
-            }else if(std.mem.eql(u8, method.builtin_fn, "mapget")) {
-                if(arg != .array) unreachable;
-                if(arg.array.len != 2) unreachable;
-                if(arg.array[0].* != .map) unreachable;
-                if(arg.array[1].* != .symbol) unreachable;
+                return .{ .map = map_dupe.toOwnedSlice() };
+            } else if (std.mem.eql(u8, method.builtin_fn, "mapget")) {
+                if (arg != .array) unreachable;
+                if (arg.array.len != 2) unreachable;
+                if (arg.array[0].* != .map) unreachable;
+                if (arg.array[1].* != .symbol) unreachable;
 
-                for(arg.array[0].map) |item| {
-                    if(item.key == arg.array[1].symbol) {
+                for (arg.array[0].map) |item| {
+                    if (item.key == arg.array[1].symbol) {
                         return item.value.*;
                     }
                 }
                 unreachable;
-            }else std.debug.panic("TODO call method @{s}", .{method.builtin_fn});
+            } else std.debug.panic("TODO call method @{s}", .{method.builtin_fn});
         },
     }
 }
@@ -81,7 +81,7 @@ const TyVal = struct {
     val: *Val,
     ty: *Ty,
     pub fn new(ty: Ty, val: Val) *TyVal {
-        return allocDupe(TyVal{.ty = allocDupe(ty), .val = allocDupe(val)});
+        return allocDupe(TyVal{ .ty = allocDupe(ty), .val = allocDupe(val) });
     }
 };
 pub fn printTyVal(out: anytype, ty_val: TyVal) void {
@@ -91,7 +91,7 @@ pub fn printTyVal(out: anytype, ty_val: TyVal) void {
     printVal(out, ty_val.val.*);
 }
 const Ty = union(enum) {
-    pub const MapEntry = struct{
+    pub const MapEntry = struct {
         key: Symbol,
         value: *Ty,
         // is_comptime: ?*Val.Literal,
@@ -115,9 +115,7 @@ const Ty = union(enum) {
     map: struct {
         properties: []MapEntry,
     },
-    array: struct {
-        items: []ArrayEntry
-    },
+    array: struct { items: []ArrayEntry },
     symbol: Symbol,
     number: []const u8,
     string: []const u8,
@@ -131,9 +129,9 @@ pub fn printTy(out: anytype, ty: Ty) void {
         },
         .map => |map| {
             out.writeAll("(@map_type){") catch @panic("bad");
-            for(map.properties) |prop, i| {
-                if(i != 0) out.writeAll(", ") catch @panic("bad");
-                if(prop.props.is_mutable) out.writeAll("*") catch @panic("bad");
+            for (map.properties) |prop, i| {
+                if (i != 0) out.writeAll(", ") catch @panic("bad");
+                if (prop.props.is_mutable) out.writeAll("*") catch @panic("bad");
                 out.print("#{d}: ", .{@enumToInt(prop.key)}) catch @panic("bad");
                 printTy(out, prop.value.*);
             }
@@ -180,7 +178,7 @@ const Val = union(enum) {
     env: void,
 
     const Literal = union(enum) {
-        const MapEntry = struct {key: Symbol, value: *Literal};
+        const MapEntry = struct { key: Symbol, value: *Literal };
         symbol: Symbol,
         number: []const u8,
         string: []const u8,
@@ -215,7 +213,7 @@ const Val = union(enum) {
 };
 pub fn printVal(out: anytype, val: Val) void {
     switch (val) {
-        .literal => |lit| switch(lit) {
+        .literal => |lit| switch (lit) {
             .symbol => |sym| out.print("#{d}", .{@enumToInt(sym)}) catch @panic("bad"),
             .number => |num| out.writeAll(num) catch @panic("bad"),
             .string => |str| out.print("\"{s}\"", .{str}) catch @panic("bad"),
@@ -254,8 +252,8 @@ pub fn printVal(out: anytype, val: Val) void {
         },
         .array => |array| {
             out.writeAll("[") catch @panic("bad");
-            for(array.items) |item, i| {
-                if(i != 0) out.writeAll(", ") catch @panic("bad");
+            for (array.items) |item, i| {
+                if (i != 0) out.writeAll(", ") catch @panic("bad");
                 printTyVal(out, item.*);
             }
             out.writeAll("]") catch @panic("bad");
@@ -271,55 +269,57 @@ fn analyze(expr: *Expr, env: *Ty) *TyVal {
     // - in ty, have a .pure which says if the content is pure relative to this node
     // - in ty, have a .all_comptime which says if this entire node can be computed at comptime
     // - after analyzing, call at comptime if pure && all_comptime
-    return switch(expr.*) {
-        .literal => |l| switch(l) {
+    return switch (expr.*) {
+        .literal => |l| switch (l) {
             .symbol => |sym| TyVal.new(.{
                 .symbol = sym,
-            }, .{.literal = .{
+            }, .{ .literal = .{
                 .symbol = sym,
-            }}),
+            } }),
             .number => |num| TyVal.new(.{
                 .number = num,
-            }, .{.literal = .{
+            }, .{ .literal = .{
                 .number = num,
-            }}),
+            } }),
             .string => |str| TyVal.new(.{
                 .string = str,
-            }, .{.literal = .{
+            }, .{ .literal = .{
                 .string = str,
-            }}),
+            } }),
             .builtin => |b| blk: {
-                if(std.mem.eql(u8, b, "empty_map")) {
-                    break :blk TyVal.new(.{.map = .{
+                if (std.mem.eql(u8, b, "empty_map")) {
+                    break :blk TyVal.new(.{ .map = .{
                         .properties = &.{},
-                    }}, .{
-                        .literal = .{.map = &.{}},
+                    } }, .{
+                        .literal = .{ .map = &.{} },
                     });
-                }else if(std.mem.eql(u8, b, "void")) {
-                    break :blk TyVal.new(.void, .{.literal = .void});
+                } else if (std.mem.eql(u8, b, "void")) {
+                    break :blk TyVal.new(.void, .{ .literal = .void });
                 }
-                break :blk TyVal.new(.{.function = .{
-                    .arg = null,
-                    .return_type = null,
-                    .fn_flags = .{.pure = true}, // depends on the fn
-                }}, .{.literal = .{
+                break :blk TyVal.new(.{
+                    .function = .{
+                        .arg = null,
+                        .return_type = null,
+                        .fn_flags = .{ .pure = true }, // depends on the fn
+                    },
+                }, .{ .literal = .{
                     .builtin_fn = b,
-                }});
+                } });
             },
-            .void => TyVal.new(.void, .{.literal = .void}),
+            .void => TyVal.new(.void, .{ .literal = .void }),
         },
         .block => |block| blk: {
             const enter = analyze(block.enter, env);
             // TODO pass enter's return type to exit somehow?
-            if(enter.ty.* != .void) @panic("enter must return void");
+            if (enter.ty.* != .void) @panic("enter must return void");
             const next = analyze(block.next, env);
             const exit = analyze(block.exit, env);
-            if(exit.ty.* != .void) @panic("exit must return void");
-            break :blk TyVal.new(next.ty.*, .{.block = .{
+            if (exit.ty.* != .void) @panic("exit must return void");
+            break :blk TyVal.new(next.ty.*, .{ .block = .{
                 .enter = enter,
                 .next = next,
                 .exit = exit,
-            }});
+            } });
         },
         .withenv => |wenv| blk: {
             const new_env = analyze(wenv.new_env, env);
@@ -334,9 +334,9 @@ fn analyze(expr: *Expr, env: *Ty) *TyVal {
         .call => |call| blk: {
             const method = analyze(call.method, env);
             const arg = analyze(call.arg, env);
-            if(method.ty.* != .function) @panic("bad method type");
+            if (method.ty.* != .function) @panic("bad method type");
             const fn_ty = method.ty.function;
-            if(fn_ty.arg) |_| {
+            if (fn_ty.arg) |_| {
                 @panic("TODO check if type matches type");
             }
             // if fn is comptime | pure and arg is a literal, call at comptime
@@ -344,11 +344,12 @@ fn analyze(expr: *Expr, env: *Ty) *TyVal {
 
             const default_call = Val{
                 .call = .{
-                    .method = method, .arg = arg,
+                    .method = method,
+                    .arg = arg,
                 },
             };
 
-            if(fn_ty.return_type) |return_type| {
+            if (fn_ty.return_type) |return_type| {
                 break :blk TyVal.new(return_type.*, default_call);
             }
 
@@ -356,49 +357,49 @@ fn analyze(expr: *Expr, env: *Ty) *TyVal {
             // return type based on the argument type
             // I think the method body has to be analyzed based on a specified argument type or something
             // yeah and that will say the return type and return the runtime method
-            if(method.val.* != .literal) @panic("method must be comptime-known to determine return type");
-            if(method.val.literal != .builtin_fn) @panic("TODO");
-            if(std.mem.eql(u8, method.val.literal.builtin_fn, "mapset")) {
-                if(arg.ty.* != .array) @panic("@mapset bad arg");
-                if(arg.ty.array.items.len != 3) @panic("@mapset req 3 arg"); // could @mapset [a, b] to delete?
+            if (method.val.* != .literal) @panic("method must be comptime-known to determine return type");
+            if (method.val.literal != .builtin_fn) @panic("TODO");
+            if (std.mem.eql(u8, method.val.literal.builtin_fn, "mapset")) {
+                if (arg.ty.* != .array) @panic("@mapset bad arg");
+                if (arg.ty.array.items.len != 3) @panic("@mapset req 3 arg"); // could @mapset [a, b] to delete?
                 const args = arg.ty.array.items;
                 const map_arg = args[0].value;
                 const key_arg = args[1].value;
                 const value_arg = args[2].value;
-                if(map_arg.* != .map) @panic("@mapset[0] req map");
-                if(key_arg.* != .symbol) @panic("@mapset[1] req symbol");
-                for(map_arg.map.properties) |prop| {
-                    if(prop.key == key_arg.symbol) @panic("map already contains key. use @mapmut");
+                if (map_arg.* != .map) @panic("@mapset[0] req map");
+                if (key_arg.* != .symbol) @panic("@mapset[1] req symbol");
+                for (map_arg.map.properties) |prop| {
+                    if (prop.key == key_arg.symbol) @panic("map already contains key. use @mapmut");
                 }
                 var new_props = std.ArrayList(Ty.MapEntry).init(global_allocator.?);
                 new_props.appendSlice(map_arg.map.properties) catch @panic("oom"); // shallow copy of comptime
                 new_props.append(Ty.MapEntry{
                     .key = key_arg.symbol,
                     .value = value_arg,
-                    .props = .{.is_mutable = true},
+                    .props = .{ .is_mutable = true },
                 }) catch @panic("oom");
                 break :blk TyVal.new(.{
-                    .map = .{.properties = new_props.toOwnedSlice()},
+                    .map = .{ .properties = new_props.toOwnedSlice() },
                 }, default_call);
-            }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "mapget")) {
-                if(arg.ty.* != .array) @panic("@mapget bad arg");
-                if(arg.ty.array.items.len != 2) @panic("@mapget req 2 arg");
+            } else if (std.mem.eql(u8, method.val.literal.builtin_fn, "mapget")) {
+                if (arg.ty.* != .array) @panic("@mapget bad arg");
+                if (arg.ty.array.items.len != 2) @panic("@mapget req 2 arg");
                 const args = arg.ty.array.items;
                 const map_arg = args[0].value;
                 const key_arg = args[1].value;
-                if(map_arg.* != .map) @panic("@mapget[0] req map");
-                if(key_arg.* != .symbol) @panic("@mapget[1] req symbol");
-                for(map_arg.map.properties) |prop| {
-                    if(prop.key == key_arg.symbol) {
+                if (map_arg.* != .map) @panic("@mapget[0] req map");
+                if (key_arg.* != .symbol) @panic("@mapget[1] req symbol");
+                for (map_arg.map.properties) |prop| {
+                    if (prop.key == key_arg.symbol) {
                         break :blk TyVal.new(prop.value.*, default_call);
                     }
                 }
                 @panic("map does not contain key.");
-            }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "print")) {
+            } else if (std.mem.eql(u8, method.val.literal.builtin_fn, "print")) {
                 break :blk TyVal.new(.void, default_call);
-            }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "typeOf")) {
-                break :blk TyVal.new(.type, .{.literal = .{.ty = arg.ty}});
-            }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "compileLog")) {
+            } else if (std.mem.eql(u8, method.val.literal.builtin_fn, "typeOf")) {
+                break :blk TyVal.new(.type, .{ .literal = .{ .ty = arg.ty } });
+            } else if (std.mem.eql(u8, method.val.literal.builtin_fn, "compileLog")) {
                 const out = std.io.getStdErr().writer();
                 out.writeAll("@compileLog:lyn:col: /") catch @panic("bad");
                 printTy(out, arg.ty.*);
@@ -406,22 +407,22 @@ fn analyze(expr: *Expr, env: *Ty) *TyVal {
                 printVal(out, arg.val.*);
                 out.writeAll("\n\n") catch @panic("bad");
                 @panic("got compileLog");
-            }else std.debug.panic("TODO builtin_fn @{s}", .{method.val.literal.builtin_fn});
+            } else std.debug.panic("TODO builtin_fn @{s}", .{method.val.literal.builtin_fn});
         },
         .label => @panic("TODO label"),
         .array => |arr| blk: {
             var res_arr = std.ArrayList(*TyVal).init(global_allocator.?);
             var res_ty = std.ArrayList(Ty.ArrayEntry).init(global_allocator.?);
-            for(arr.items) |item| {
+            for (arr.items) |item| {
                 const analyzed = analyze(item, env);
                 res_arr.append(analyzed) catch @panic("oom");
-                res_ty.append(.{.value = analyzed.ty, .props = .{.is_mutable = true}}) catch @panic("oom");
+                res_ty.append(.{ .value = analyzed.ty, .props = .{ .is_mutable = true } }) catch @panic("oom");
             }
-            break :blk TyVal.new(.{.array = .{
+            break :blk TyVal.new(.{ .array = .{
                 .items = res_ty.toOwnedSlice(),
-            }}, .{.array = .{
+            } }, .{ .array = .{
                 .items = res_arr.toOwnedSlice(),
-            }});
+            } });
         },
         .env => TyVal.new(env.*, .env),
     };
@@ -545,18 +546,18 @@ pub fn parse(penv: Penv, characters: *CharacterStream) *Expr {
         }
         var defer_expr: ?*Expr = if (tokens.eat(.gap, "defer")) blk: {
             const res = parse(penv, characters);
-            if(!tokens.eat(.gap, ";")) {
+            if (!tokens.eat(.gap, ";")) {
                 std.log.err("got bad '{s}'", .{tokens.next(.gap)});
                 @panic("todo error");
             }
             break :blk res;
-         } else null;
+        } else null;
         const next_expr = parse(penv, characters);
 
         return allocDupe(Expr{ .block = .{
             .enter = enter_expr,
             .next = next_expr,
-            .exit = defer_expr orelse allocDupe(.{.literal = .void}),
+            .exit = defer_expr orelse allocDupe(.{ .literal = .void }),
         } });
     } else if (tokens.eat(.gap, "withenv")) {
         const new_env = parse(penv, characters);
@@ -571,7 +572,7 @@ pub fn parse(penv: Penv, characters: *CharacterStream) *Expr {
         } });
     } else if (tokens.eat(.gap, "(")) {
         const method = parse(penv, characters);
-        if(!tokens.eat(.gap, ")")) {
+        if (!tokens.eat(.gap, ")")) {
             std.log.err("got bad '{s}'", .{tokens.next(.gap)});
             @panic("todo error");
         }
@@ -699,7 +700,7 @@ pub fn main() anyerror!void {
     out.writeAll("\n\n") catch @panic("bad");
 
     out.writeAll("// Analyzing...\n") catch @panic("bad");
-    const analyzed = analyze(parsed, allocDupe(Ty{.@"void" = {}}));
+    const analyzed = analyze(parsed, allocDupe(Ty{ .@"void" = {} }));
     out.writeAll("// AIR:\n") catch @panic("bad");
     printTyVal(out, analyzed.*);
     out.writeAll("\n\n") catch @panic("bad");
@@ -707,6 +708,6 @@ pub fn main() anyerror!void {
     out.writeAll("// Executing...\n") catch @panic("bad");
     const executed = execute(.void, analyzed, null);
     out.writeAll("// Exec Res:\n") catch @panic("bad");
-    printVal(out, .{.literal = executed});
+    printVal(out, .{ .literal = executed });
     out.writeAll("\n\n") catch @panic("bad");
 }
