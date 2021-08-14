@@ -1,0 +1,15 @@
+//  fn (compiler)platform {
+//      fn (compile)code -> JS.Ast {
+//          
+//      }
+//      fn (compileLiteral)literal -> JS.Ast <return>{
+//          (@switch)literal
+//              todo symbol => return 
+//      }
+//  }
+
+// (((compiler)null).compileRoot)code
+
+// const code = ast ...
+// (exec)code
+// 
