@@ -1,0 +1,41 @@
+// parsing text
+// 1. CharacterStream
+
+// - support '.' in identifiers I think
+// - imports should be static and written in a consistent language, not
+//   handled by parsers. it should be possible to get a full map of all
+//   the needed source files trivially.
+// - a string map may be needed to get imported symbols unless ^that will
+//   give access to symbols.
+
+// - mapset_comptime might not be great. eg in a fn the env is just the arg
+//   so there is no way to do impure comptime stuff while analyzing the fn
+
+defsymbol #utf8;
+defsymbol #utf8_content;
+block (@mapset_comptime)[env #utf8 (@typeOf)map {
+    #utf8_content: (@array_type)@u8,
+}];
+defsymbol #utf8_byte_len;
+defsymbol #utf8_byte_at;
+
+defsymbol #CharacterStream;
+defsymbol #CharacterStream.text;
+defsymbol #CharacterStream.index;
+block (@mapset_comptime)[env #CharacterStream (@typeOf)map {
+    #CharacterStream.text: (@mapget_comptime)[env #utf8],
+    #CharacterStream.index: @any_integer,
+}];
+defsymbol #CharacterStream.peek;
+block (@mapset_comptime)[@env #CharacterStream.peek function
+    // flags
+    [impure]
+    // argument type
+    (@mapget_comptime)[@env #CharacterStream]
+    // return type
+    (@optional)@any_byte
+    // code (argument is @env, you should probably replace it)
+    defsymbol #stream;
+    withenv map {#stream: env};
+    //
+]
