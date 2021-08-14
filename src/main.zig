@@ -85,7 +85,6 @@ const TyVal = struct {
     }
 };
 pub fn printTyVal(out: anytype, ty_val: TyVal) void {
-    // out.writeAll("*") catch @panic("oom");
     // printTy(out, ty_val.ty.*);
     // out.writeAll(", ") catch @panic("oom");
     printVal(out, ty_val.val.*);
@@ -187,6 +186,8 @@ const Val = union(enum) {
         array: []*Literal,
         // note: struct{} == struct{} even though those may be different pointers.
         // - what about map types with comptime props? how do those work?
+        // - there, it would probably compare references. but for all the type
+        //   stuff it should be purely structural.
         ty: *Ty,
         @"void": void,
     };
@@ -468,7 +469,7 @@ const Expr = union(enum) {
         @"void": void,
     };
     const Block = struct {
-        enter: *Expr, // call exit with the return value of enter
+        enter: *Expr, // TODO call exit with the return value of enter (using anonymous iffe |_| blocks)
         next: *Expr,
         exit: *Expr,
     };
@@ -526,9 +527,6 @@ const Penv = struct {
 };
 
 pub fn parse(penv: Penv, characters: *CharacterStream) *Expr {
-    // const reload = characters.save();
-    // errdefer reload.call();
-
     const tokens = TokenStream.wrap(characters);
 
     std.log.info("Parsing... {s}", .{blk: {
@@ -537,8 +535,6 @@ pub fn parse(penv: Penv, characters: *CharacterStream) *Expr {
         break :blk tokens.next(.gap);
     }});
     if (tokens.eat(.gap, "block")) {
-        // 'block' :enter ('defer' :exit)? ';' :next
-
         const enter_expr = parse(penv, characters);
         if (!tokens.eat(.gap, ";")) {
             std.log.err("got bad '{s}'", .{tokens.next(.gap)});
@@ -600,7 +596,7 @@ pub fn parse(penv: Penv, characters: *CharacterStream) *Expr {
         return parse(dupe.*, characters);
     } else if (tokens.eat(.gap, "#")) {
         // this is why it would be good to have eg tokens.next(.no_gap, .identifier) because uuh
-        // defsymbol #"; is completely valid code otherwise
+        // defsymbol #"; is completely valid code currently
         const symname = tokens.next(.no_gap) orelse @panic("TODO error");
 
         const symbol = penv.getsymbol(symname) orelse {
@@ -689,7 +685,7 @@ pub fn main() anyerror!void {
     global_allocator = std.heap.page_allocator;
     var stream = CharacterStream{
         .index = 0,
-        .text = @embedFile("sample2.resyn"),
+        .text = @embedFile("example.resyn"),
     };
     const out = std.io.getStdOut().writer();
 

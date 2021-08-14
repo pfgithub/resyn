@@ -1,0 +1,8 @@
+withenv @empty_map;
+block (@print)"wow!";
+defer (@print)"leaving.";
+defsymbol #demo;
+withenv (@mapset)[env #demo "hello, world!"];
+block (@print)(@mapget)[env #demo];
+//block (@compileLog)(@typeOf)env;
+"The program has finished executing."
