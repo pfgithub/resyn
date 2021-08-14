@@ -49,14 +49,22 @@ const Ty = union(enum) {
     number: []const u8,
     string: []const u8,
     @"void": void,
+    @"type": void,
 };
 pub fn printTy(out: anytype, ty: Ty) void {
     switch (ty) {
         .function => {
             out.writeAll("(@fn_type)TODO") catch @panic("bad");
         },
-        .map => {
-            out.writeAll("(@map_type)TODO") catch @panic("bad");
+        .map => |map| {
+            out.writeAll("(@map_type){") catch @panic("bad");
+            for(map.properties) |prop, i| {
+                if(i != 0) out.writeAll(", ") catch @panic("bad");
+                if(prop.props.is_mutable) out.writeAll("*") catch @panic("bad");
+                out.print("#{d}: ", .{@enumToInt(prop.key)}) catch @panic("bad");
+                printTy(out, prop.value.*);
+            }
+            out.writeAll("}") catch @panic("bad");
         },
         .array => {
             out.writeAll("(@array_type)TODO") catch @panic("bad");
@@ -72,6 +80,9 @@ pub fn printTy(out: anytype, ty: Ty) void {
         },
         .void => {
             out.writeAll("(@typeof)@void") catch @panic("bad");
+        },
+        .type => {
+            out.writeAll("type") catch @panic("bad");
         },
     }
 }
@@ -251,61 +262,73 @@ fn analyze(expr: *Expr, env: *Ty) *TyVal {
                 @panic("TODO check if type matches type");
             }
             // if fn is comptime | pure and arg is a literal, call at comptime
-            // if fn is comptime and arg is not comptime, error
-            const return_type = fn_ty.return_type orelse rtblk: {
-                // call something at comptime to determine the
-                // return type based on the argument type
-                // I think the method body has to be analyzed based on a specified argument type or something
-                // yeah and that will say the return type and return the runtime method
-                if(method.val.* != .literal) @panic("method must be comptime-known to determine return type");
-                if(method.val.literal != .builtin_fn) @panic("TODO");
-                if(std.mem.eql(u8, method.val.literal.builtin_fn, "mapset")) {
-                    if(arg.ty.* != .array) @panic("@mapset bad arg");
-                    if(arg.ty.array.items.len != 3) @panic("@mapset req 3 arg"); // could @mapset [a, b] to delete?
-                    const args = arg.ty.array.items;
-                    const map_arg = args[0].value;
-                    const key_arg = args[1].value;
-                    const value_arg = args[2].value;
-                    if(map_arg.* != .map) @panic("@mapset[0] req map");
-                    if(key_arg.* != .symbol) @panic("@mapset[1] req symbol");
-                    for(map_arg.map.properties) |prop| {
-                        if(prop.key == key_arg.symbol) @panic("map already contains key. use @mapmut");
-                    }
-                    var new_props = std.ArrayList(Ty.MapEntry).init(global_allocator.?);
-                    new_props.appendSlice(map_arg.map.properties) catch @panic("oom"); // shallow copy of comptime
-                    new_props.append(Ty.MapEntry{
-                        .key = key_arg.symbol,
-                        .value = value_arg,
-                        .props = .{.is_mutable = true},
-                    }) catch @panic("oom");
-                    break :rtblk allocDupe(Ty{
-                        .map = .{.properties = new_props.toOwnedSlice()},
-                    });
-                    // return {...map, [k]: v}
-                }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "mapget")) {
-                    if(arg.ty.* != .array) @panic("@mapget bad arg");
-                    if(arg.ty.array.items.len != 2) @panic("@mapget req 2 arg");
-                    const args = arg.ty.array.items;
-                    const map_arg = args[0].value;
-                    const key_arg = args[1].value;
-                    if(map_arg.* != .map) @panic("@mapget[0] req map");
-                    if(key_arg.* != .symbol) @panic("@mapget[1] req symbol");
-                    for(map_arg.map.properties) |prop| {
-                        if(prop.key == key_arg.symbol) {
-                            break :rtblk prop.value;
-                        }
-                    }
-                    @panic("map does not contain key.");
-                }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "print")) {
-                    break :rtblk allocDupe(Ty{.void = {}});
-                }else std.debug.panic("TODO builtin_fn @{s}", .{method.val.literal.builtin_fn});
-            };
-            break :blk TyVal.new(return_type.*, .{
+            // if fn is comptime and arg is not a literal, error
+
+            const default_call = Val{
                 .call = .{
-                    .method = method,
-                    .arg = arg,
+                    .method = method, .arg = arg,
                 },
-            });
+            };
+
+            if(fn_ty.return_type) |return_type| {
+                break :blk TyVal.new(return_type.*, default_call);
+            }
+
+            // call something at comptime to determine the
+            // return type based on the argument type
+            // I think the method body has to be analyzed based on a specified argument type or something
+            // yeah and that will say the return type and return the runtime method
+            if(method.val.* != .literal) @panic("method must be comptime-known to determine return type");
+            if(method.val.literal != .builtin_fn) @panic("TODO");
+            if(std.mem.eql(u8, method.val.literal.builtin_fn, "mapset")) {
+                if(arg.ty.* != .array) @panic("@mapset bad arg");
+                if(arg.ty.array.items.len != 3) @panic("@mapset req 3 arg"); // could @mapset [a, b] to delete?
+                const args = arg.ty.array.items;
+                const map_arg = args[0].value;
+                const key_arg = args[1].value;
+                const value_arg = args[2].value;
+                if(map_arg.* != .map) @panic("@mapset[0] req map");
+                if(key_arg.* != .symbol) @panic("@mapset[1] req symbol");
+                for(map_arg.map.properties) |prop| {
+                    if(prop.key == key_arg.symbol) @panic("map already contains key. use @mapmut");
+                }
+                var new_props = std.ArrayList(Ty.MapEntry).init(global_allocator.?);
+                new_props.appendSlice(map_arg.map.properties) catch @panic("oom"); // shallow copy of comptime
+                new_props.append(Ty.MapEntry{
+                    .key = key_arg.symbol,
+                    .value = value_arg,
+                    .props = .{.is_mutable = true},
+                }) catch @panic("oom");
+                break :blk TyVal.new(.{
+                    .map = .{.properties = new_props.toOwnedSlice()},
+                }, default_call);
+            }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "mapget")) {
+                if(arg.ty.* != .array) @panic("@mapget bad arg");
+                if(arg.ty.array.items.len != 2) @panic("@mapget req 2 arg");
+                const args = arg.ty.array.items;
+                const map_arg = args[0].value;
+                const key_arg = args[1].value;
+                if(map_arg.* != .map) @panic("@mapget[0] req map");
+                if(key_arg.* != .symbol) @panic("@mapget[1] req symbol");
+                for(map_arg.map.properties) |prop| {
+                    if(prop.key == key_arg.symbol) {
+                        break :blk TyVal.new(prop.value.*, default_call);
+                    }
+                }
+                @panic("map does not contain key.");
+            }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "print")) {
+                break :blk TyVal.new(.void, default_call);
+            }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "typeOf")) {
+                break :blk TyVal.new(.type, .{.literal = .{.ty = arg.ty}});
+            }else if(std.mem.eql(u8, method.val.literal.builtin_fn, "compileLog")) {
+                const out = std.io.getStdErr().writer();
+                out.writeAll("@compileLog:lyn:col: /") catch @panic("bad");
+                printTy(out, arg.ty.*);
+                out.writeAll(": ") catch @panic("bad");
+                printVal(out, arg.val.*);
+                out.writeAll("\n\n") catch @panic("bad");
+                @panic("got compileLog");
+            }else std.debug.panic("TODO builtin_fn @{s}", .{method.val.literal.builtin_fn});
         },
         .label => @panic("TODO label"),
         .array => |arr| blk: {

@@ -4,6 +4,7 @@ defer call @print "leaving.";
 defsymbol #demo;
 withenv call @mapset array [env #demo "hello, world!"];
 block call @print call @mapget array[env #demo];
+//block call @compileLog call @typeOf env;
 @void
 
 // defsymbol #platform;
