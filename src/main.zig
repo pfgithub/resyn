@@ -77,6 +77,122 @@ fn execute(env: Val.Literal, code: *TyVal, platform: ?*Platform) Val.Literal {
     }
 }
 
+fn compileJS(code: *TyVal, platform: ?*Platform) []const u8 {
+    var res = std.ArrayList(u8).init(global_allocator.?);
+    res.appendSlice(
+        \\function unreachable() {
+        \\    throw new Error("expected unreachable");
+        \\}
+        \\function builtin_print(arg) {
+        \\    console.log(arg);
+        \\}
+        \\function builtin_mapget([map, key]) {
+        \\    if(!Object.hasOwn(map, key)) unreachable();
+        \\    return map[key];
+        \\}
+        \\function builtin_mapset([map, key, value]) {
+        \\    if(Object.hasOwn(map, key)) unreachable();
+        \\    return {...map, [key]: value};
+        \\}
+        \\
+    ) catch @panic("oom");
+    res.appendSlice("(env => (\n") catch @panic("oom");
+    res.appendSlice(compile(code, platform)) catch @panic("oom");
+    res.appendSlice("))(undefined);") catch @panic("oom");
+    return res.toOwnedSlice();
+}
+
+fn compile(code: *TyVal, platform: ?*Platform) []const u8 {
+    switch (code.val.*) {
+        .literal => |literal| return compileLiteral(literal, platform),
+        .call => |call| {
+            var res = std.ArrayList(u8).init(global_allocator.?);
+            res.appendSlice(compile(call.method, platform)) catch @panic("oom");
+            res.appendSlice("(") catch @panic("oom");
+            res.appendSlice(compile(call.arg, platform)) catch @panic("oom");
+            res.appendSlice(")") catch @panic("oom");
+            return res.toOwnedSlice();
+        },
+        .block => |block| {
+            var res = std.ArrayList(u8).init(global_allocator.?);
+            if (block.exit.val.* == .literal and block.exit.val.literal == .void) {
+                res.appendSlice("(") catch @panic("oom");
+                res.appendSlice(compile(block.enter, platform)) catch @panic("oom");
+                res.appendSlice("\n,") catch @panic("oom");
+                res.appendSlice(compile(block.next, platform)) catch @panic("oom");
+                res.appendSlice(")") catch @panic("oom");
+            } else {
+                res.appendSlice("(() => {\n") catch @panic("oom");
+                res.appendSlice(compile(block.enter, platform)) catch @panic("oom");
+                res.appendSlice(";\n") catch @panic("oom");
+                res.appendSlice("const res = ") catch @panic("oom");
+                res.appendSlice(compile(block.next, platform)) catch @panic("oom");
+                res.appendSlice(";\n") catch @panic("oom");
+                res.appendSlice(compile(block.exit, platform)) catch @panic("oom");
+                res.appendSlice(";\n") catch @panic("oom");
+                res.appendSlice("return res;\n") catch @panic("oom");
+                res.appendSlice("})()") catch @panic("oom");
+            }
+            return res.toOwnedSlice();
+        },
+        .withenv => |wenv| {
+            var res = std.ArrayList(u8).init(global_allocator.?);
+            res.appendSlice("(env => (\n") catch @panic("oom");
+            res.appendSlice(compile(wenv.next, platform)) catch @panic("oom");
+            res.appendSlice("\n))(") catch @panic("oom");
+            res.appendSlice(compile(wenv.new_env, platform)) catch @panic("oom");
+            res.appendSlice(")") catch @panic("oom");
+            return res.toOwnedSlice();
+        },
+        .label => @panic("TODO label"),
+        .array => |array| {
+            var res = std.ArrayList(u8).init(global_allocator.?);
+            res.appendSlice("[") catch @panic("oom");
+            for (array.items) |item, i| {
+                if (i != 0) res.appendSlice(", ") catch @panic("oom");
+                res.appendSlice(compile(item, platform)) catch @panic("oom");
+            }
+            res.appendSlice("]") catch @panic("oom");
+            return res.toOwnedSlice();
+        },
+        .env => return "env",
+    }
+}
+
+fn compileLiteral(literal: Val.Literal, platform: ?*Platform) []const u8 {
+    switch (literal) {
+        // it's okay to have two different things be represented by the same
+        // js value because this is strongly typed
+        .symbol => |sym| return std.fmt.allocPrint(global_allocator.?, "{d}", .{@enumToInt(sym)}) catch @panic("oom"),
+        .number => |num| return std.fmt.allocPrint(global_allocator.?, "{s}n", .{num}) catch @panic("oom"),
+        .string => |str| return std.fmt.allocPrint(global_allocator.?, "\"{}\"", .{std.zig.fmtEscapes(str)}) catch @panic("oom"),
+        .builtin_fn => |bfn| return std.fmt.allocPrint(global_allocator.?, "builtin_{s}", .{bfn}) catch @panic("oom"),
+        .map => |map| {
+            var res = std.ArrayList(u8).init(global_allocator.?);
+            res.appendSlice("({") catch @panic("oom");
+            for (map) |entry, i| {
+                if (i != 0) res.appendSlice(", ") catch @panic("oom");
+                res.appendSlice(compileLiteral(.{ .symbol = entry.key }, platform)) catch @panic("oom");
+                res.appendSlice(compileLiteral(entry.value.*, platform)) catch @panic("oom");
+            }
+            res.appendSlice("})") catch @panic("oom");
+            return res.toOwnedSlice();
+        },
+        .array => |arr| {
+            var res = std.ArrayList(u8).init(global_allocator.?);
+            res.appendSlice("[") catch @panic("oom");
+            for (arr) |item, i| {
+                if (i != 0) res.appendSlice(", ") catch @panic("oom");
+                res.appendSlice(compileLiteral(item.*, platform)) catch @panic("oom");
+            }
+            res.appendSlice("]") catch @panic("oom");
+            return res.toOwnedSlice();
+        },
+        .ty => @panic("type cannot exist at runtime"),
+        .void => return "undefined",
+    }
+}
+
 const TyVal = struct {
     val: *Val,
     ty: *Ty,
@@ -705,5 +821,11 @@ pub fn main() anyerror!void {
     const executed = execute(.void, analyzed, null);
     out.writeAll("// Exec Res:\n") catch @panic("bad");
     printVal(out, .{ .literal = executed });
+    out.writeAll("\n\n") catch @panic("bad");
+
+    out.writeAll("// Compiling...\n") catch @panic("bad");
+    const compiled = compileJS(analyzed, null);
+    out.writeAll("// Compile Res:\n") catch @panic("bad");
+    out.writeAll(compiled) catch @panic("bad");
     out.writeAll("\n\n") catch @panic("bad");
 }
