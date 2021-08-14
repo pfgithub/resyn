@@ -112,9 +112,9 @@ pub const TokenStream = struct {
             return null;
         };
         switch (char) {
-            'a'...'z', 'A'...'Z', '0'...'9', '_' => {
+            'a'...'z', 'A'...'Z', '_' => {
                 while (ts.stream.next()) |c2| switch (c2) {
-                    'a'...'z', 'A'...'Z', '0'...'9' => {},
+                    'a'...'z', 'A'...'Z', '0'...'9', '_' => {},
                     else => {
                         ts.stream.undo();
                         break;

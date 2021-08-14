@@ -16,6 +16,9 @@ auto_block {
     call @print (array [@mapget, call @env, #demo);
 } @void;
 
+block call @mapset (array [@env, #demo, 25)
+block call @print (array [@mapget, call @env, #demo]);
+
 //unrelated, a fun feature:
 // a thing passed as aparameter could default to being readonly unless you & it
 // not just a parameter, basically any expression slot or smth

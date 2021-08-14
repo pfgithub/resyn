@@ -30,3 +30,11 @@ component Home() HTMLElement# <return>{
 
 // a: "hi"
 // a: string# "hi"
+
+unless(value) 1
+else |v|:
+2
+3
+4
+5
+6

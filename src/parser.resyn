@@ -1,0 +1,90 @@
+:#parse block env.#parse := fn 
+
+
+// @print :: impure
+// 1. typeof arg is "wow"
+// 2. expected type of arg is string
+// 3. cast "wow" to string
+// 4. return type of print can be gotten by uuh how
+//    I think it's just the typeof the body so it's void
+// 5. type of print call is void
+// 6. expected void
+// 7. ok
+// 8. defer hasn't been figured out yet. like maybe we'll
+//    end up with block "hi" defer |capture| print(capture)
+//    not sure.
+// 9. the return value of the block is typeof next (don't
+//    even have to worry about early breaks here since it's
+//    a different language concept)
+// 10. how do I get the return value of mapset?
+//     this is going to be generic since
+//     mapset({#b: 6}, #a, 5) -> {#a: 5, #b: 6}
+
+
+
+
+
+// small issue with automatic comptime execution and a very
+// granular type system
+
+// value = some_fn(25);
+// value = 50;
+
+// where some_fn returns its arg
+// if the parameter was runtime known it'd return
+// number, but since it's comptime known it returns 25
+
+// that might be a situation where you want wait a sec
+// why would it return 25? it returns typeof body
+// and body returns number nvm
+
+// there is no issue nvm it returns number in both cases
+// just in one case the number is known to be 25 so
+// if you were to @as(25, the_number) it'd be fine with
+// it
+
+// actually there is an issue isn't there
+// fn[a, b] number: 25;
+// fn[a, b] if(typeof b == i32) number else string: something;
+// notice
+// getting the return type of the fn may rely on
+// actually that's fine though because it relies on comptime
+// parameters only it can't rely on runtime parameters
+// so who cares
+
+//
+
+// ok parsing is fun and easy
+// like std.import(@embedFile("something"))
+// import is just a fn marked as comptime only so it's allowed to be
+// impure
+
+// import calls parse(text) and it returns the ast or whatever
+// and it memoizes or smth
+// pretty neat I think
+// and if you want to do something eg switch parsers
+// halfway through the file, your parser needs to expose that
+// functionality to you
+
+
+// ah how to do blocks:
+// just pushenv
+
+// like
+// let a = 5;
+// {
+//   let b = 6;
+//   a = 3;
+//   break b;
+// }
+
+// withenv @mapset env.a = 5
+// block
+//   withenv @mapset env.b = 6
+//   block @mapset_impure env.a = 5
+//   env.b
+
+// ok so::
+// here's the issue, how does mapset work?
+// is it {...env, b = 6}
+// because if it is then the env.a doesn't work
