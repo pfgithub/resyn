@@ -4,5 +4,9 @@ defer (@print)"leaving.";
 defsymbol #demo;
 withenv (@mapset)[env #demo "hello, world!"];
 block (@print)(@mapget)[env #demo];
-//block (@compileLog)(@typeOf)env;
+defsymbol #demo2;
+withenv (@mapset)[env #demo2 "another example"];
+block (@print)(@mapget)[env #demo2];
+// block (@compileLog)(@typeOf)env; // should print all keys in @env
+// withenv (@mapset)[env #demo "overwriting"]; // should error
 "The program has finished executing."
