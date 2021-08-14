@@ -4,6 +4,79 @@ const CharacterStream = streams.CharacterStream;
 const TokenStream = streams.TokenStream;
 const StringTokenStream = streams.StringTokenStream;
 
+const Platform = struct {};
+
+/// executes the code in the specified platform.
+/// code executed at comptime does not have a platform.
+/// the platform is only available at runtime.
+///
+/// no typechecks are done since typechecks are done during
+/// analysis
+fn execute(env: Val.Literal, code: *TyVal, platform: ?*Platform) Val.Literal {
+    switch(code.val.*) {
+        .literal => |literal| return literal,
+        .block => |block| {
+            _ = execute(env, block.enter, platform);
+            const res = execute(env, block.next, platform);
+            _ = execute(env, block.exit, platform);
+            return res;
+        },
+        .withenv => |wenv| {
+            const next_env = execute(env, wenv.new_env, platform);
+            return execute(next_env, wenv.next, platform);
+        },
+        .label => @panic("TODO label"),
+        .array => |array| {
+            var res_arr = std.ArrayList(*Val.Literal).init(global_allocator.?);
+            for(array.items) |item| {
+                res_arr.append(allocDupe(execute(env, item, platform))) catch @panic("oom");
+            }
+            return .{.array = res_arr.toOwnedSlice()};
+        },
+        .env => return env,
+
+        .call => |call| {
+            // method, arg
+            const method = execute(env, call.method, platform);
+            const arg = execute(env, call.arg, platform);
+            if(method != .builtin_fn) @panic("TODO");
+            if(std.mem.eql(u8, method.builtin_fn, "print")) {
+                const out = std.io.getStdOut().writer();
+                out.writeAll("Program printed: ") catch @panic("bad");
+                printVal(out, .{.literal = arg});
+                out.writeAll("\n") catch @panic("bad");
+                return .void;
+            }else if(std.mem.eql(u8, method.builtin_fn, "mapset")) {
+                if(arg != .array) unreachable;
+                if(arg.array.len != 3) unreachable;
+                if(arg.array[0].* != .map) unreachable;
+                if(arg.array[1].* != .symbol) unreachable;
+                for(arg.array[0].map) |item| {
+                    if(item.key == arg.array[1].symbol) unreachable;
+                }
+
+                var map_dupe = std.ArrayList(Val.Literal.MapEntry).init(global_allocator.?);
+                map_dupe.appendSlice(arg.array[0].map) catch @panic("oom");
+                map_dupe.append(.{.key = arg.array[1].symbol, .value = arg.array[2]}) catch @panic("oom");
+
+                return .{.map = map_dupe.toOwnedSlice()};
+            }else if(std.mem.eql(u8, method.builtin_fn, "mapget")) {
+                if(arg != .array) unreachable;
+                if(arg.array.len != 2) unreachable;
+                if(arg.array[0].* != .map) unreachable;
+                if(arg.array[1].* != .symbol) unreachable;
+
+                for(arg.array[0].map) |item| {
+                    if(item.key == arg.array[1].symbol) {
+                        return item.value.*;
+                    }
+                }
+                unreachable;
+            }else std.debug.panic("TODO call method @{s}", .{method.builtin_fn});
+        },
+    }
+}
+
 const TyVal = struct {
     val: *Val,
     ty: *Ty,
@@ -107,11 +180,13 @@ const Val = union(enum) {
     env: void,
 
     const Literal = union(enum) {
+        const MapEntry = struct {key: Symbol, value: *Literal};
         symbol: Symbol,
         number: []const u8,
         string: []const u8,
         builtin_fn: []const u8,
-        map: []struct {key: Symbol, value: *Literal},
+        map: []MapEntry,
+        array: []*Literal,
         // note: struct{} == struct{} even though those may be different pointers.
         // - what about map types with comptime props? how do those work?
         ty: *Ty,
@@ -147,6 +222,9 @@ pub fn printVal(out: anytype, val: Val) void {
             .builtin_fn => |bfn| out.print("@{s}", .{bfn}) catch @panic("bad"),
             .map => |_| {
                 out.print("TODO_map", .{}) catch @panic("bad");
+            },
+            .array => |_| {
+                out.print("TODO_array", .{}) catch @panic("bad");
             },
             .ty => |ty| printTy(out, ty.*),
             .void => out.writeAll("@void") catch @panic("bad"),
@@ -614,13 +692,21 @@ pub fn main() anyerror!void {
     };
     const out = std.io.getStdOut().writer();
 
+    out.writeAll("// Parsing...\n") catch @panic("bad");
     const parsed = parse(Penv.new().*, &stream); // TODO check that the entire file was parsed
     out.writeAll("// AST:\n") catch @panic("bad");
     printExpr(out, parsed.*);
     out.writeAll("\n\n") catch @panic("bad");
 
+    out.writeAll("// Analyzing...\n") catch @panic("bad");
     const analyzed = analyze(parsed, allocDupe(Ty{.@"void" = {}}));
     out.writeAll("// AIR:\n") catch @panic("bad");
     printTyVal(out, analyzed.*);
+    out.writeAll("\n\n") catch @panic("bad");
+
+    out.writeAll("// Executing...\n") catch @panic("bad");
+    const executed = execute(.void, analyzed, null);
+    out.writeAll("// Exec Res:\n") catch @panic("bad");
+    printVal(out, .{.literal = executed});
     out.writeAll("\n\n") catch @panic("bad");
 }

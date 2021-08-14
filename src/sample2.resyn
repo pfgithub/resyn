@@ -5,7 +5,7 @@ defsymbol #demo;
 withenv (@mapset)[env #demo "hello, world!"];
 block (@print)(@mapget)[env #demo];
 //block (@compileLog)(@typeOf)env;
-@void
+"The program has finished executing."
 
 // defsymbol #platform;
 // block (@mapset)[env, #platform, import "platform"];
