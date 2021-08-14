@@ -1,10 +1,10 @@
 withenv @empty_map;
-block call @print "wow!";
-defer call @print "leaving.";
+block (@print)"wow!";
+defer (@print)"leaving.";
 defsymbol #demo;
-withenv call @mapset array [env #demo "hello, world!"];
-block call @print call @mapget array[env #demo];
-//block call @compileLog call @typeOf env;
+withenv (@mapset)[env #demo "hello, world!"];
+block (@print)(@mapget)[env #demo];
+//block (@compileLog)(@typeOf)env;
 @void
 
 // defsymbol #platform;

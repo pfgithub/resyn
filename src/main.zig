@@ -491,15 +491,18 @@ pub fn parse(penv: Penv, characters: *CharacterStream) *Expr {
             .new_env = new_env,
             .next = next_expr,
         } });
-    } else if (tokens.eat(.gap, "call")) {
+    } else if (tokens.eat(.gap, "(")) {
         const method = parse(penv, characters);
+        if(!tokens.eat(.gap, ")")) {
+            std.log.err("got bad '{s}'", .{tokens.next(.gap)});
+            @panic("todo error");
+        }
         const arg = parse(penv, characters);
         return allocDupe(Expr{ .call = .{
             .method = method,
             .arg = arg,
         } });
-    } else if (tokens.eat(.gap, "array")) {
-        if (!tokens.eat(.gap, "[")) @panic("TODO error");
+    } else if (tokens.eat(.gap, "[")) {
         var res_exprs = std.ArrayList(*Expr).init(global_allocator.?);
         while (!tokens.eat(.gap, "]")) {
             res_exprs.append(parse(penv, characters)) catch @panic("oom");
