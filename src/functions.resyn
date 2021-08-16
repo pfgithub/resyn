@@ -14,28 +14,34 @@ withenv (@mapset)[env #example_fn function
 
 ((@mapget)[env #example_fn])"fn_arg"
 
-// ok so:
-// functions need order independent declarations
-// so you should be able to declare two functions and:
-// - analyze the arg types before analyzing the bodies
-// maybe even just complete order-independence or something
-// like start from the top and analyze all dependents
-//
-// not sure
-//
-// another thing : is it necessary to @typeOf in types?
-// like what if typeOf was assumed
-// then if you want to make a type you just make an
-// example argument. and it would contain some special
-// stuff like @any_string which is a value that cannot
-// be represented at runtime but its type is that of
-// any string
-//
-// essentially @as([]const u8, undefined) in zig eg
-//
-// that could be neat maybe
-//
-// back to the above,
-// the issue with order independent decls is that
-// comptime stuff might be impure and then the order
-// would matter for the order of comptime execution
+// there is an issue.
+// 1. compile time code should run from left to right, top to bottom.
+// 2. there should be order-independent declarations
+// these two things are in conflict
+// one of them must be sacrificed
+// and it's likely 1.
+
+// also, there's an issue now
+// a mapget might have a side effect of executing comptime stuff
+// so something needs to be done to make sure mapget can continue to not
+// have side-effects
+
+// eg env.#order_independent(#some_fn)
+// like you call a fn to get the function
+// because then it can have side effects and that's kinda expected
+// and then we can just go top to bottom in the file, typechecking,
+// and when it comes across that, env.#order_independent is a comptime
+// thing
+
+// so eg like uuh
+
+// function any :: #order_independent -> auto: function ... -> ...: ...;
+// and then in there, the inner function could access env.order_independent
+// and would be able to access all the other fns or something
+// so you'd declare them all in a big map. and the outer ones would be
+// comptime fns so they don't execute immediately and only typecheck
+// when called and then the inner ones are runtime fns so they
+// typecheck immediately when seen.
+// so you'd make an order independent block eg `namespace {...}` and then
+// to get things from it you'd have to env.#thing(#fn_name) and it'd call
+// at comptime and return the function for you.
