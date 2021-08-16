@@ -34,45 +34,65 @@ fn execute(env: Val.Literal, code: *TyVal, platform: ?*Platform) Val.Literal {
             return .{ .array = res_arr.toOwnedSlice() };
         },
         .env => return env,
+        .function => |function| {
+            return .{ .function = .{ .env = allocDupe(env), .arg = function.arg, .body = function.body } };
+        },
 
         .call => |call| {
             // method, arg
             const method = execute(env, call.method, platform);
             const arg = execute(env, call.arg, platform);
-            if (method != .builtin_fn) @panic("TODO");
-            if (std.mem.eql(u8, method.builtin_fn, "print")) {
-                const out = std.io.getStdOut().writer();
-                out.writeAll("Program printed: ") catch @panic("bad");
-                printVal(out, .{ .literal = arg });
-                out.writeAll("\n") catch @panic("bad");
-                return .void;
-            } else if (std.mem.eql(u8, method.builtin_fn, "mapset")) {
-                if (arg != .array) unreachable;
-                if (arg.array.len != 3) unreachable;
-                if (arg.array[0].* != .map) unreachable;
-                if (arg.array[1].* != .symbol) unreachable;
-                for (arg.array[0].map) |item| {
-                    if (item.key == arg.array[1].symbol) unreachable;
-                }
+            switch (method) {
+                .function => |function| {
+                    if (function.env.* != .map) unreachable;
 
-                var map_dupe = std.ArrayList(Val.Literal.MapEntry).init(global_allocator.?);
-                map_dupe.appendSlice(arg.array[0].map) catch @panic("oom");
-                map_dupe.append(.{ .key = arg.array[1].symbol, .value = arg.array[2] }) catch @panic("oom");
-
-                return .{ .map = map_dupe.toOwnedSlice() };
-            } else if (std.mem.eql(u8, method.builtin_fn, "mapget")) {
-                if (arg != .array) unreachable;
-                if (arg.array.len != 2) unreachable;
-                if (arg.array[0].* != .map) unreachable;
-                if (arg.array[1].* != .symbol) unreachable;
-
-                for (arg.array[0].map) |item| {
-                    if (item.key == arg.array[1].symbol) {
-                        return item.value.*;
+                    for (function.env.map) |entry| {
+                        if (entry.key == function.arg) unreachable;
                     }
-                }
-                unreachable;
-            } else std.debug.panic("TODO call method @{s}", .{method.builtin_fn});
+                    var map_dupe = std.ArrayList(Val.Literal.MapEntry).init(global_allocator.?);
+                    map_dupe.appendSlice(function.env.map) catch @panic("oom");
+                    map_dupe.append(.{ .key = function.arg, .value = allocDupe(arg) }) catch @panic("oom");
+                    const body_env = Val.Literal{ .map = map_dupe.toOwnedSlice() };
+
+                    return execute(body_env, function.body, platform);
+                },
+                .builtin_fn => |bfn| {
+                    if (std.mem.eql(u8, bfn, "print")) {
+                        const out = std.io.getStdOut().writer();
+                        out.writeAll("Program printed: ") catch @panic("bad");
+                        printVal(out, .{ .literal = arg });
+                        out.writeAll("\n") catch @panic("bad");
+                        return .void;
+                    } else if (std.mem.eql(u8, bfn, "mapset")) {
+                        if (arg != .array) unreachable;
+                        if (arg.array.len != 3) unreachable;
+                        if (arg.array[0].* != .map) unreachable;
+                        if (arg.array[1].* != .symbol) unreachable;
+                        for (arg.array[0].map) |item| {
+                            if (item.key == arg.array[1].symbol) unreachable;
+                        }
+
+                        var map_dupe = std.ArrayList(Val.Literal.MapEntry).init(global_allocator.?);
+                        map_dupe.appendSlice(arg.array[0].map) catch @panic("oom");
+                        map_dupe.append(.{ .key = arg.array[1].symbol, .value = arg.array[2] }) catch @panic("oom");
+
+                        return .{ .map = map_dupe.toOwnedSlice() };
+                    } else if (std.mem.eql(u8, bfn, "mapget")) {
+                        if (arg != .array) unreachable;
+                        if (arg.array.len != 2) unreachable;
+                        if (arg.array[0].* != .map) unreachable;
+                        if (arg.array[1].* != .symbol) unreachable;
+
+                        for (arg.array[0].map) |item| {
+                            if (item.key == arg.array[1].symbol) {
+                                return item.value.*;
+                            }
+                        }
+                        unreachable;
+                    } else std.debug.panic("TODO call method @{s}", .{bfn});
+                },
+                else => @panic("Not callable."),
+            }
         },
     }
 }
@@ -120,6 +140,13 @@ const Ty = union(enum) {
     string: []const u8,
     @"void": void,
     @"type": void,
+
+    pub fn coercesTo(narrow: Ty, wide: Ty) bool {
+        if (narrow == .string and wide == .string) {
+            return std.mem.eql(u8, narrow.string, wide.string);
+        }
+        std.debug.panic("TODO Ty.coercesTo @as[{s}, {s}] ", .{ std.meta.tagName(wide), std.meta.tagName(narrow) });
+    }
 };
 pub fn printTy(out: anytype, ty: Ty) void {
     switch (ty) {
@@ -175,6 +202,7 @@ const Val = union(enum) {
     label: Label,
     array: Array,
     env: void,
+    function: Function,
 
     const Literal = union(enum) {
         const MapEntry = struct { key: Symbol, value: *Literal };
@@ -184,12 +212,19 @@ const Val = union(enum) {
         builtin_fn: []const u8,
         map: []MapEntry,
         array: []*Literal,
+        function: FunctionLiteral,
         // note: struct{} == struct{} even though those may be different pointers.
         // - what about map types with comptime props? how do those work?
         // - there, it would probably compare references. but for all the type
         //   stuff it should be purely structural.
         ty: *Ty,
         @"void": void,
+
+        const FunctionLiteral = struct {
+            env: *Literal,
+            arg: Symbol,
+            body: *TyVal,
+        };
     };
     const Call = struct {
         method: *TyVal,
@@ -211,6 +246,10 @@ const Val = union(enum) {
     const Array = struct {
         items: []*TyVal,
     };
+    const Function = struct {
+        arg: Symbol,
+        body: *TyVal,
+    };
 };
 pub fn printVal(out: anytype, val: Val) void {
     switch (val) {
@@ -227,6 +266,12 @@ pub fn printVal(out: anytype, val: Val) void {
             },
             .ty => |ty| printTy(out, ty.*),
             .void => out.writeAll("@void") catch @panic("bad"),
+            .function => |function| {
+                out.print("function env:(", .{}) catch @panic("bad");
+                printVal(out, .{ .literal = function.env.* });
+                out.print(") #{d}:\n", .{@enumToInt(function.arg)}) catch @panic("bad");
+                printTyVal(out, function.body.*);
+            },
         },
         .call => |call| {
             out.writeAll("(") catch @panic("bad");
@@ -261,6 +306,10 @@ pub fn printVal(out: anytype, val: Val) void {
         },
         .env => {
             out.writeAll("env") catch @panic("bad");
+        },
+        .function => |function| {
+            out.print("function #{d}:\n", .{@enumToInt(function.arg)}) catch @panic("bad");
+            printTyVal(out, function.body.*);
         },
     }
 }
@@ -337,8 +386,10 @@ fn analyze(expr: *Expr, env: *Ty) *TyVal {
             const arg = analyze(call.arg, env);
             if (method.ty.* != .function) @panic("bad method type");
             const fn_ty = method.ty.function;
-            if (fn_ty.arg) |_| {
-                @panic("TODO check if type matches type");
+            if (fn_ty.arg) |fn_arg_ty| {
+                if (!arg.ty.coercesTo(fn_arg_ty.*)) {
+                    @panic("Calling function. Expected arg ty {} but got arg ty {}.");
+                }
             }
             // if fn is comptime | pure and arg is a literal, call at comptime
             // if fn is comptime and arg is not a literal, error
@@ -426,11 +477,61 @@ fn analyze(expr: *Expr, env: *Ty) *TyVal {
             } });
         },
         .env => TyVal.new(env.*, .env),
+        .function => |function| blk: {
+            const arg_ty = analyze(function.arg_ty, env);
+            if (arg_ty.ty.* != .type) @panic("arg type must be type");
+            if (arg_ty.val.* != .literal or arg_ty.val.literal != .ty) @panic("arg type must be comptime-known");
+            const arg_ty_raw = arg_ty.val.literal.ty;
+
+            if (env.* != .map) @panic("when creating fn, env must be a map");
+            for (env.map.properties) |prop| {
+                if (prop.key == function.arg_sym) @panic("env already contains arg symbol");
+            }
+            const body_env = clk: {
+                var new_props = std.ArrayList(Ty.MapEntry).init(global_allocator.?);
+                new_props.appendSlice(env.map.properties) catch @panic("oom"); // shallow copy of comptime
+                new_props.append(Ty.MapEntry{
+                    .key = function.arg_sym,
+                    .value = arg_ty_raw,
+                    .props = .{ .is_mutable = false },
+                }) catch @panic("oom");
+                break :clk allocDupe(Ty{
+                    .map = .{ .properties = new_props.toOwnedSlice() },
+                });
+            };
+
+            const ret_ty = analyze(function.ret_ty, body_env);
+            if (ret_ty.ty.* != .type) @panic("ret type must be type");
+            if (ret_ty.val.* != .literal or ret_ty.val.literal != .ty) @panic("reta type must be comptime-known");
+            const ret_ty_raw = ret_ty.val.literal.ty;
+
+            const body_val = analyze(function.body, body_env);
+
+            if (!body_val.ty.coercesTo(ret_ty_raw.*)) {
+                @panic("function expected return type {} but got return type {}");
+            }
+
+            break :blk TyVal.new(.{ .function = .{
+                .arg = arg_ty_raw,
+                .return_type = ret_ty_raw,
+                .fn_flags = .{ .pure = false },
+            } }, .{ .function = .{
+                .arg = function.arg_sym,
+                .body = body_val,
+            } });
+        },
     };
 }
 
 const Symbol = enum(usize) { _ };
 const Expr = union(enum) {
+    // ideally, a lot of these can be converted to builtins or
+    // fns using captures
+    // like function would eg fn(arg_t, ret_t, *|#arg| {})
+    // *|_| would be for disallowing runtime control flow inside there
+    // |_| would allow runtime control flow
+    // so you could have @block(|_| ..., |_| next);
+
     /// evaulates to the result of calling the function with the args
     call: Call,
     /// evaluates to the literal value
@@ -457,6 +558,8 @@ const Expr = union(enum) {
     env,
     /// uses the return value of a to call b with
     withenv: Withenv,
+    /// a function
+    function: Function,
     const Call = struct {
         method: *Expr,
         arg: *Expr,
@@ -483,6 +586,12 @@ const Expr = union(enum) {
     };
     const Array = struct {
         items: []*Expr,
+    };
+    const Function = struct {
+        arg_ty: *Expr,
+        arg_sym: Symbol,
+        ret_ty: *Expr,
+        body: *Expr,
     };
 };
 
@@ -519,7 +628,7 @@ const Penv = struct {
     pub fn defsymbol(penv: *Penv, name: []const u8) Symbol {
         const res = @intToEnum(Symbol, penv.start_id);
         if (penv.hm.fetchPut(name, res) catch @panic("oom")) |_| {
-            @panic("TODO error");
+            std.debug.panic("symbol `{s}` is already defined", .{name});
         }
         penv.start_id += 1;
         return res;
@@ -626,6 +735,32 @@ pub fn parse(penv: Penv, characters: *CharacterStream) *Expr {
         });
     } else if (tokens.eat(.gap, "env")) {
         return allocDupe(@as(Expr, .env));
+    } else if (tokens.eat(.gap, "function")) {
+        const arg_type = parse(penv, characters);
+
+        if (!tokens.eat(.gap, ":")) @panic("TODO error");
+        if (!tokens.eat(.no_gap, ":")) @panic("TODO error");
+        if (!tokens.eat(.gap, "#")) @panic("TODO error");
+        const arg_name = tokens.next(.no_gap) orelse @panic("TODO error");
+        const dupe = penv.dupe();
+        const arg_sym = dupe.defsymbol(arg_name);
+
+        if (!tokens.eat(.gap, "-")) @panic("TODO error");
+        if (!tokens.eat(.no_gap, ">")) @panic("TODO error");
+
+        const return_type = parse(dupe.*, characters);
+        if (!tokens.eat(.gap, ":")) @panic("TODO error");
+
+        const body = parse(dupe.*, characters);
+
+        return allocDupe(Expr{
+            .function = .{
+                .arg_ty = arg_type,
+                .arg_sym = arg_sym,
+                .ret_ty = return_type,
+                .body = body,
+            },
+        });
     } else {
         std.log.err("unexpected {s}", .{tokens.next(.gap)});
         @panic("TODO error");
@@ -676,6 +811,16 @@ pub fn printExpr(out: anytype, expr: Expr) void {
             out.writeAll(";\n") catch @panic("oom");
             printExpr(out, withenv.next.*);
         },
+        .function => |function| {
+            out.writeAll("function\n") catch @panic("oom");
+            printExpr(out, function.arg_ty.*);
+            out.writeAll(" :: ") catch @panic("oom");
+            printExpr(out, Expr{ .literal = .{ .symbol = function.arg_sym } });
+            out.writeAll(" -> ") catch @panic("oom");
+            printExpr(out, function.ret_ty.*);
+            out.writeAll(":\n") catch @panic("oom");
+            printExpr(out, function.body.*);
+        },
     }
 }
 
@@ -685,7 +830,7 @@ pub fn main() anyerror!void {
     global_allocator = std.heap.page_allocator;
     var stream = CharacterStream{
         .index = 0,
-        .text = @embedFile("example.resyn"),
+        .text = @embedFile("functions.resyn"),
     };
     const out = std.io.getStdOut().writer();
 
